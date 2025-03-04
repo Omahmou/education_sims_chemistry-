@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Electron Orbital Reaction Simulation</title>
+  <style>
+    /* Global Styles */
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; 
+      padding: 0;
+      width: 100%; 
+      height: 100%;
+      font-family: Arial, sans-serif;
+      background: #eef;
+    }
+    #container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    /* Controls Panel */
+    #controls {
+      background: #dde;
+      padding: 10px;
+      text-align: center;
+    }
+    /* Info Panel */
+    #infoPanel {
+      background: #ccd;
+      padding: 8px;
+      text-align: center;
+      font-weight: bold;
+    }
+    /* Canvas Container */
+    #canvasContainer {
+      flex: 1;
+      position: relative;
+      border: 1px solid #333;
+      margin: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    /* Fixed Canvas Size */
+    canvas {
+      background: #eef;
+      border: 1px solid #999;
+    }
+    label {
+      margin: 0 10px;
+    }
+    input, button {
+      font-size: 14px;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="controls">
+      <label>
+        Atom A Valence Electrons:
+        <input type="number" id="atomAInput" value="4" min="0" max="8">
+      </label>
+      <label>
+        Atom B Valence Electrons:
+        <input type="number" id="atomBInput" value="4" min="0" max="8">
+      </label>
+      <button id="startButton">Start Reaction</button>
+      <button id="resetButton">Reset</button>
+    </div>
+    <div id="infoPanel">Status: Not started.</div>
+    <div id="canvasContainer">
+      <!-- Fixed canvas dimensions -->
+      <canvas id="canvas" width="800" height="600"></canvas>
+    </div>
+  </div>
+  
+  <script>
+    (function(){
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const atomAInput = document.getElementById("atomAInput");
+      const atomBInput = document.getElementById("atomBInput");
+      const startButton = document.getElementById("startButton");
+      const resetButton = document.getElementById("resetButton");
+      const infoPanel = document.getElementById("infoPanel");
+
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      
+      let simulationRunning = false;
+      // simulationState can be "approaching", "combined", or "repelled"
+      let simulationState = "approaching";
+      let animationFrameId;
+      let electronRotation = 0;
+      
+      let atomA, atomB, combinedAtom = null;
+      
+      // Draw background
+      function drawBackground(){
+        ctx.fillStyle = "#eef";
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+      }
+      
+      // Initialize the simulation based on user input.
+      function initSimulation(){
+        const valA = parseInt(atomAInput.value);
+        const valB = parseInt(atomBInput.value);
+        if(isNaN(valA) || isNaN(valB)){
+          infoPanel.innerText = "Error: Enter valid numbers.";
+          simulationRunning = false;
+          return;
+        }
+        // Set starting positions: Atom A on the left; Atom B on the right.
+        atomA = {
+          x: canvasWidth * 0.2,
+          y: canvasHeight / 2,
+          radius: 30,
+          valence: valA,
+          color: "#ff7f50" // Coral
+        };
+        atomB = {
+          x: canvasWidth * 0.8,
+          y: canvasHeight / 2,
+          radius: 30,
+          valence: valB,
+          color: "#87cefa" // Light Sky Blue
+        };
+        combinedAtom = null; // reset any previous fusion
+        simulationState = "approaching";
+        simulationRunning = true;
+        electronRotation = 0;
+        infoPanel.innerText = "Status: Atoms approaching...";
+      }
+      
+      // Update positions and check reaction conditions.
+      function updateSimulation(){
+        if(simulationState === "approaching"){
+          const speed = 2;
+          atomA.x += speed;
+          atomB.x -= speed;
+          // When atoms get close enough:
+          if(atomB.x - atomA.x <= (atomA.radius + atomB.radius + 20)){
+            // If the total valence electrons equal 8, combine them.
+            if(atomA.valence + atomB.valence === 8){
+              simulationState = "combined";
+              // Create a combined atom positioned at the midpoint.
+              combinedAtom = {
+                x: (atomA.x + atomB.x) / 2,
+                y: (atomA.y + atomB.y) / 2,
+                // Make the combined nucleus a bit larger.
+                radius: Math.max(atomA.radius, atomB.radius) + 10,
+                valence: atomA.valence + atomB.valence,
+                // Use a new color to indicate a bonded atom.
+                color: "#8FBC8F"
+              };
+              infoPanel.innerText = "Reaction Outcome: Stable bond formed!";
+            } else {
+              simulationState = "repelled";
+              infoPanel.innerText = "Reaction Outcome: No stable bond – atoms repel.";
+            }
+          }
+        } else if(simulationState === "repelled"){
+          // Atoms repel by moving apart.
+          const repelSpeed = 2;
+          atomA.x -= repelSpeed;
+          atomB.x += repelSpeed;
+          if(atomA.x < canvasWidth * 0.1 && atomB.x > canvasWidth * 0.9){
+            simulationRunning = false;
+          }
+        } else if(simulationState === "combined"){
+          // Move the combined atom toward the center.
+          const targetX = canvasWidth / 2;
+          const targetY = canvasHeight / 2;
+          combinedAtom.x += (targetX - combinedAtom.x) * 0.1;
+          combinedAtom.y += (targetY - combinedAtom.y) * 0.1;
+          if(Math.abs(combinedAtom.x - targetX) < 1 && Math.abs(combinedAtom.y - targetY) < 1){
+            simulationRunning = false;
+          }
+        }
+        // Rotate electrons for a dynamic effect.
+        electronRotation += 0.02;
+      }
+      
+      // Draw a single atom (nucleus, orbital ring, and electrons).
+      function drawAtom(atom){
+        // Draw nucleus.
+        ctx.beginPath();
+        ctx.arc(atom.x, atom.y, atom.radius, 0, Math.PI * 2);
+        ctx.fillStyle = atom.color;
+        ctx.fill();
+        ctx.strokeStyle = "#333";
+        ctx.stroke();
+        
+        // Draw orbital ring.
+        const orbitalRadius = atom.radius + 15;
+        ctx.beginPath();
+        ctx.arc(atom.x, atom.y, orbitalRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = "#999";
+        ctx.stroke();
+        
+        // Draw electrons (evenly spaced and rotating).
+        const count = atom.valence;
+        if(count > 0){
+          for(let i = 0; i < count; i++){
+            const angle = electronRotation + (Math.PI * 2 / count) * i;
+            const ex = atom.x + orbitalRadius * Math.cos(angle);
+            const ey = atom.y + orbitalRadius * Math.sin(angle);
+            ctx.beginPath();
+            ctx.arc(ex, ey, 5, 0, Math.PI * 2);
+            ctx.fillStyle = "#ff0";
+            ctx.fill();
+            ctx.strokeStyle = "#666";
+            ctx.stroke();
+          }
+        }
+      }
+      
+      // Draw the simulation frame.
+      function drawSimulation(){
+        drawBackground();
+        if(simulationState === "combined" && combinedAtom){
+          // Draw the single combined atom with all electrons (should equal 8).
+          drawAtom(combinedAtom);
+        } else {
+          // Draw individual atoms.
+          drawAtom(atomA);
+          drawAtom(atomB);
+          // (Blue line removed)
+        }
+      }
+      
+      // Main animation loop.
+      function loop(){
+        if(!simulationRunning) return;
+        updateSimulation();
+        drawSimulation();
+        animationFrameId = requestAnimationFrame(loop);
+      }
+      
+      // Start button event.
+      startButton.addEventListener("click", function(){
+        cancelAnimationFrame(animationFrameId);
+        initSimulation();
+        loop();
+      });
+      
+      // Reset button event.
+      resetButton.addEventListener("click", function(){
+        simulationRunning = false;
+        cancelAnimationFrame(animationFrameId);
+        drawBackground();
+        infoPanel.innerText = "Status: Not started.";
+      });
+      
+      // Draw initial background.
+      drawBackground();
+    })();
+  </script>
+</body>
+</html>

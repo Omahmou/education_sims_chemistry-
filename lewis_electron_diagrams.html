@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<!--
+  Interactive Lewis Diagram Simulator
+  ------------------------------------------------------------------
+  Features:
+  - In Placement Mode, click to add atoms from a broader roster:
+       • H, B, C, N, O, F, Si, P, S, Cl, Br, I
+  - In Bond Mode, click two atoms to form a covalent bond.
+  - When a bond is formed, each atom’s free electrons decrease.
+  - Detected compounds (by connected atoms, ignoring charge) are listed.
+  - Bonding electrons (yellow dots) are always visible along each bond.
+  - The interface is designed for cross‑browser compatibility with no scrolling.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Disposition" content="attachment; filename=LewisDiagramSim.html">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Lewis Diagram Simulator</title>
+  <style>
+    /* Global Styles */
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; 
+      padding: 0;
+      width: 100%; 
+      height: 100%;
+      overflow: hidden; /* Prevent scrolling */
+      font-family: Arial, sans-serif;
+      background: #eef;
+    }
+    #container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    /* Controls Panel */
+    #controls {
+      background: #dde;
+      padding: 10px;
+      text-align: center;
+    }
+    /* Info and Compound Panels */
+    #infoPanel, #compoundPanel {
+      background: #ccd;
+      padding: 8px;
+      text-align: center;
+      font-weight: bold;
+    }
+    #compoundPanel {
+      background: #ddf;
+      margin-top: 4px;
+    }
+    /* Canvas Container */
+    #canvasContainer {
+      flex: 1;
+      position: relative;
+      border: 1px solid #333;
+      margin: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    /* Fixed Canvas Size */
+    canvas {
+      background: #eef;
+      border: 1px solid #999;
+    }
+    label {
+      margin: 0 10px;
+    }
+    select, button {
+      font-size: 14px;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="controls">
+      <label>
+        Select Element:
+        <select id="elementSelect">
+          <option value="H">Hydrogen (H)</option>
+          <option value="B">Boron (B)</option>
+          <option value="C">Carbon (C)</option>
+          <option value="N">Nitrogen (N)</option>
+          <option value="O">Oxygen (O)</option>
+          <option value="F">Fluorine (F)</option>
+          <option value="Si">Silicon (Si)</option>
+          <option value="P">Phosphorus (P)</option>
+          <option value="S">Sulfur (S)</option>
+          <option value="Cl">Chlorine (Cl)</option>
+          <option value="Br">Bromine (Br)</option>
+          <option value="I">Iodine (I)</option>
+        </select>
+      </label>
+      <button id="placeButton">Placement Mode</button>
+      <button id="toggleBondMode">Bond Mode: Off</button>
+      <button id="clearButton">Clear</button>
+    </div>
+    <div id="infoPanel">Mode: Placement. Click on canvas to add an element.</div>
+    <div id="compoundPanel">Detected compounds: None</div>
+    <div id="canvasContainer">
+      <canvas id="canvas" width="800" height="600"></canvas>
+    </div>
+  </div>
+  
+  <script>
+    (function(){
+      // DOM element references
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const elementSelect = document.getElementById("elementSelect");
+      const placeButton = document.getElementById("placeButton");
+      const toggleBondModeButton = document.getElementById("toggleBondMode");
+      const clearButton = document.getElementById("clearButton");
+      const infoPanel = document.getElementById("infoPanel");
+      const compoundPanel = document.getElementById("compoundPanel");
+      
+      // Modes: "placement" or "bond"
+      let mode = "placement";
+      
+      // Arrays to store atoms and bonds
+      let atoms = [];
+      let bonds = [];
+      // For bonding: store the index of the currently selected atom (if any)
+      let selectedAtomIndex = null;
+      
+      // Define element properties.
+      // Each element has:
+      // - electrons: neutral valence electron count.
+      // - maxBonds: maximum bonds.
+      const elementProperties = {
+        H: { electrons: 1, maxBonds: 1 },
+        B: { electrons: 3, maxBonds: 3 },
+        C: { electrons: 4, maxBonds: 4 },
+        N: { electrons: 5, maxBonds: 3 },
+        O: { electrons: 6, maxBonds: 2 },
+        F: { electrons: 7, maxBonds: 1 },
+        Si: { electrons: 4, maxBonds: 4 },
+        P: { electrons: 5, maxBonds: 3 },
+        S: { electrons: 6, maxBonds: 2 },
+        Cl: { electrons: 7, maxBonds: 1 },
+        Br: { electrons: 7, maxBonds: 1 },
+        I: { electrons: 7, maxBonds: 1 }
+      };
+      
+      const atomRadius = 20; // radius for drawing atoms
+      
+      // Utility: count the number of bonds attached to atom at index i.
+      function countBonds(i) {
+        return bonds.filter(bond => bond.a === i || bond.b === i).length;
+      }
+      
+      // Update info panel based on current mode and selection.
+      function updateInfoPanel() {
+        let modeText = mode === "placement" ? "Placement" : "Bond";
+        let extra = (mode === "bond" && selectedAtomIndex !== null) ? " (Selected " + atoms[selectedAtomIndex].symbol + ")" : "";
+        infoPanel.innerText = "Mode: " + modeText + extra + ". Click on canvas accordingly.";
+      }
+      
+      // Update the compound panel by detecting connected compounds (ignoring charge differences).
+      function detectCompounds() {
+        const visited = new Array(atoms.length).fill(false);
+        let detected = [];
+        
+        function dfs(index, component) {
+          visited[index] = true;
+          component.push(index);
+          bonds.forEach(bond => {
+            if (bond.a === index && !visited[bond.b]) {
+              dfs(bond.b, component);
+            } else if (bond.b === index && !visited[bond.a]) {
+              dfs(bond.a, component);
+            }
+          });
+        }
+        
+        // For each connected component, count element types.
+        for (let i = 0; i < atoms.length; i++) {
+          if (!visited[i]) {
+            let component = [];
+            dfs(i, component);
+            if (component.length > 1) {
+              let compCount = {};
+              component.forEach(idx => {
+                const sym = atoms[idx].symbol;
+                compCount[sym] = (compCount[sym] || 0) + 1;
+              });
+              // Check against known compounds (ignoring charge).
+              const knownCompounds = [
+                { name: "Water", formula: "H₂O", composition: { H: 2, O: 1 } },
+                { name: "Methane", formula: "CH₄", composition: { C: 1, H: 4 } },
+                { name: "Ammonia", formula: "NH₃", composition: { N: 1, H: 3 } },
+                { name: "Carbon Dioxide", formula: "CO₂", composition: { C: 1, O: 2 } },
+                { name: "Oxygen", formula: "O₂", composition: { O: 2 } },
+                { name: "Nitrogen", formula: "N₂", composition: { N: 2 } },
+                { name: "Hydrogen", formula: "H₂", composition: { H: 2 } }
+              ];
+              knownCompounds.forEach(compound => {
+                if (compositionMatches(compCount, compound.composition)) {
+                  detected.push(compound.name + " (" + compound.formula + ")");
+                }
+              });
+            }
+          }
+        }
+        compoundPanel.innerText = "Detected compounds: " + (detected.length ? detected.join(", ") : "None");
+      }
+      
+      // Helper: compare two composition objects.
+      function compositionMatches(compCount, compoundComposition) {
+        const keys1 = Object.keys(compCount).sort();
+        const keys2 = Object.keys(compoundComposition).sort();
+        if (keys1.length !== keys2.length) return false;
+        for (let i = 0; i < keys1.length; i++) {
+          if (keys1[i] !== keys2[i] || compCount[keys1[i]] !== compoundComposition[keys1[i]]) return false;
+        }
+        return true;
+      }
+      
+      // Get the index of an atom at position (x, y), or null if none.
+      function getAtomAt(x, y) {
+        for (let i = atoms.length - 1; i >= 0; i--) {
+          const atom = atoms[i];
+          const dx = x - atom.x;
+          const dy = y - atom.y;
+          if (Math.sqrt(dx * dx + dy * dy) <= atomRadius) return i;
+        }
+        return null;
+      }
+      
+      // Draw canvas background.
+      function drawBackground() {
+        ctx.fillStyle = "#eef";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      
+      // Draw bonds. Bonds are drawn as lines with bonding electrons (yellow dots) along the bond.
+      function drawBonds() {
+        ctx.strokeStyle = "#555";
+        ctx.lineWidth = 2;
+        bonds.forEach(bond => {
+          const atomA = atoms[bond.a];
+          const atomB = atoms[bond.b];
+          if (atomA && atomB) {
+            ctx.beginPath();
+            ctx.moveTo(atomA.x, atomA.y);
+            ctx.lineTo(atomB.x, atomB.y);
+            ctx.stroke();
+            
+            // Draw bonding electrons at the bond’s midpoint (always two dots).
+            const midX = (atomA.x + atomB.x) / 2;
+            const midY = (atomA.y + atomB.y) / 2;
+            const dx = atomB.x - atomA.x;
+            const dy = atomB.y - atomA.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len === 0) return;
+            const perpX = -dy / len;
+            const perpY = dx / len;
+            const offset = 10;
+            const e1x = midX + perpX * offset;
+            const e1y = midY + perpY * offset;
+            const e2x = midX - perpX * offset;
+            const e2y = midY - perpY * offset;
+            
+            ctx.beginPath();
+            ctx.arc(e1x, e1y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "#ff0";
+            ctx.fill();
+            ctx.strokeStyle = "#666";
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.arc(e2x, e2y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "#ff0";
+            ctx.fill();
+            ctx.strokeStyle = "#666";
+            ctx.stroke();
+          }
+        });
+      }
+      
+      // Draw an atom: its circle, symbol, and free electrons.
+      function drawAtom(atom, index) {
+        // Draw the atom’s circle.
+        ctx.beginPath();
+        ctx.arc(atom.x, atom.y, atomRadius, 0, Math.PI * 2);
+        ctx.fillStyle = "#ddd";
+        ctx.fill();
+        ctx.lineWidth = (mode === "bond" && index === selectedAtomIndex) ? 3 : 1;
+        ctx.strokeStyle = (mode === "bond" && index === selectedAtomIndex) ? "#f00" : "#333";
+        ctx.stroke();
+        
+        // Draw the element symbol.
+        ctx.fillStyle = "#000";
+        ctx.font = "16px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(atom.symbol, atom.x, atom.y);
+        
+        // Draw free electrons as small yellow dots around the atom.
+        const free = atom.freeElectrons;
+        if (free > 0) {
+          const angleIncrement = (Math.PI * 2) / free;
+          const electronDistance = atomRadius + 10;
+          const electronRadius = 4;
+          for (let i = 0; i < free; i++) {
+            const angle = -Math.PI/2 + i * angleIncrement;
+            const ex = atom.x + electronDistance * Math.cos(angle);
+            const ey = atom.y + electronDistance * Math.sin(angle);
+            ctx.beginPath();
+            ctx.arc(ex, ey, electronRadius, 0, Math.PI * 2);
+            ctx.fillStyle = "#ff0";
+            ctx.fill();
+            ctx.strokeStyle = "#666";
+            ctx.stroke();
+          }
+        }
+      }
+      
+      // Redraw entire canvas.
+      function updateCanvas() {
+        drawBackground();
+        drawBonds();
+        atoms.forEach((atom, index) => drawAtom(atom, index));
+      }
+      
+      // Handle canvas clicks.
+      canvas.addEventListener("click", function(event) {
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        if (mode === "placement") {
+          // Only add an atom if no atom exists at that location.
+          if (getAtomAt(x, y) === null) {
+            const symbol = elementSelect.value;
+            const props = elementProperties[symbol];
+            const neutral = props.electrons; // Neutral valence electron count.
+            const freeElectrons = neutral;   // Always start with neutral electrons.
+            const newAtom = {
+              x, y,
+              symbol,
+              neutral,       // Neutral valence electrons.
+              freeElectrons, // Free electrons available for bonding.
+              maxBonds: props.maxBonds
+            };
+            atoms.push(newAtom);
+            updateCanvas();
+            detectCompounds();
+          }
+        } else if (mode === "bond") {
+          const atomIndex = getAtomAt(x, y);
+          if (atomIndex !== null) {
+            if (selectedAtomIndex === null) {
+              selectedAtomIndex = atomIndex;
+            } else if (selectedAtomIndex === atomIndex) {
+              selectedAtomIndex = null;
+            } else {
+              const atom1 = atoms[selectedAtomIndex];
+              const atom2 = atoms[atomIndex];
+              // Prevent duplicate bonds.
+              const exists = bonds.some(bond =>
+                (bond.a === selectedAtomIndex && bond.b === atomIndex) ||
+                (bond.a === atomIndex && bond.b === selectedAtomIndex)
+              );
+              if (exists) {
+                alert("A bond already exists between these atoms.");
+                selectedAtomIndex = null;
+                updateCanvas();
+                updateInfoPanel();
+                return;
+              }
+              const bondsCount1 = countBonds(selectedAtomIndex);
+              const bondsCount2 = countBonds(atomIndex);
+              if (atom1.freeElectrons > 0 && atom2.freeElectrons > 0 &&
+                  bondsCount1 < atom1.maxBonds && bondsCount2 < atom2.maxBonds) {
+                // Form a covalent bond: subtract 1 free electron from each atom.
+                bonds.push({ a: selectedAtomIndex, b: atomIndex });
+                atom1.freeElectrons--;
+                atom2.freeElectrons--;
+              } else {
+                alert("Bond cannot be formed (insufficient free electrons or max bonds reached).");
+              }
+              selectedAtomIndex = null;
+              detectCompounds();
+            }
+            updateCanvas();
+            updateInfoPanel();
+          }
+        }
+      });
+      
+      // Toggle bond mode.
+      toggleBondModeButton.addEventListener("click", function(){
+        if (mode === "placement") {
+          mode = "bond";
+          toggleBondModeButton.innerText = "Bond Mode: On";
+        } else {
+          mode = "placement";
+          toggleBondModeButton.innerText = "Bond Mode: Off";
+          selectedAtomIndex = null;
+        }
+        updateInfoPanel();
+      });
+      
+      // Switch explicitly to placement mode.
+      placeButton.addEventListener("click", function(){
+        mode = "placement";
+        selectedAtomIndex = null;
+        toggleBondModeButton.innerText = "Bond Mode: Off";
+        updateInfoPanel();
+      });
+      
+      // Clear all atoms and bonds.
+      clearButton.addEventListener("click", function(){
+        atoms = [];
+        bonds = [];
+        selectedAtomIndex = null;
+        updateCanvas();
+        updateInfoPanel();
+        detectCompounds();
+      });
+      
+      // Prevent the default context menu.
+      canvas.addEventListener("contextmenu", function(event){
+        event.preventDefault();
+      });
+      
+      // Initial draw.
+      updateCanvas();
+      updateInfoPanel();
+      detectCompounds();
+    })();
+  </script>
+</body>
+</html>

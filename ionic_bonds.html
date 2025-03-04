@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ionic Bond Simulation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* Reset & full-screen non-scrolling layout */
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: #000;
+    }
+    /* Main container holds canvas and branding footer */
+    #container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #canvasContainer {
+      width: 100%;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    /* Branding footer at bottom */
+    #footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: #222;
+      color: #aaa;
+      text-align: center;
+      padding: 10px;
+      font-size: 12px;
+      z-index: 5;
+    }
+    /* Success overlay (covers entire simulation when active) */
+    #successOverlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.95);
+      color: #fff;
+      display: none;
+      z-index: 10;
+      text-align: center;
+      padding-top: 100px;
+      font-family: Arial, sans-serif;
+    }
+    #successOverlay button {
+      font-size: 24px;
+      padding: 10px 20px;
+      margin-top: 20px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="canvasContainer">
+      <canvas id="canvas"></canvas>
+    </div>
+    <div id="footer">Dr. Omar Mahmoud Studios © 2025</div>
+    <div id="successOverlay"></div>
+  </div>
+  
+  <script>
+    // Before unload confirmation – custom text (note: browsers may override custom messages)
+    window.addEventListener("beforeunload", function (e) {
+      var confirmationMessage = "You will lose all your dirhams. Are you sure?";
+      (e || window.event).returnValue = confirmationMessage;
+      return confirmationMessage;
+    });
+
+    (function(){
+      var canvas = document.getElementById("canvas");
+      var ctx = canvas.getContext("2d");
+      var container = document.getElementById("container");
+      var successOverlay = document.getElementById("successOverlay");
+
+      // Global colors – darker green for better contrast
+      var darkGreen = "#003300";
+      var darkRed = "#8B0000";
+
+      function resizeCanvas() {
+         canvas.width = container.clientWidth;
+         canvas.height = container.clientHeight;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+
+      // Game states
+      var GAME_STATE = "GAME", SUCCESS_STATE = "SUCCESS";
+      var state = GAME_STATE;
+      var lastTime = performance.now();
+
+      // Ion panel settings
+      var ITEM_HEIGHT = 60;
+      var leftScrollOffset = 0, rightScrollOffset = 0;
+      var ionPanelItems = []; // for hit testing
+
+      // Global panel config objects (set each frame in draw)
+      var leftPanelConfig = {}, rightPanelConfig = {};
+
+      // Scrollbar drag globals
+      var leftScrollbarRect = null, rightScrollbarRect = null;
+      var leftScrollbarDragging = false, rightScrollbarDragging = false;
+      var leftScrollbarDragOffset = 0, rightScrollbarDragOffset = 0;
+      var leftScrollbarThumbY = 0, rightScrollbarThumbY = 0;
+      var leftScrollbarThumbHeight = 0, rightScrollbarThumbHeight = 0;
+
+      // Ion full names
+      var cationFullNames = {
+          "Na": "Sodium", "K": "Potassium", "Mg": "Magnesium", "Cu": "Copper",
+          "Zn": "Zinc", "Ag": "Silver", "Pb": "Lead", "Li": "Lithium",
+          "Rb": "Rubidium", "Cs": "Cesium", "Ba": "Barium", "Sr": "Strontium",
+          "Hg": "Mercury", "Cd": "Cadmium", "NH4": "Ammonium", "Ca": "Calcium"
+      };
+      var anionFullNames = {
+          "Cl": "Chloride", "Br": "Bromide", "SO4": "Sulfate", "O": "Oxide",
+          "S": "Sulfide", "F": "Fluoride", "I": "Iodide", "CO3": "Carbonate",
+          "NO3": "Nitrate"
+      };
+
+      // Compounds (sorted by price ascending)
+      var compounds = [
+        {"formula": "NaCl", "name": "Sodium Chloride", "cation": "Na", "anion": "Cl", "price": 15},
+        {"formula": "KBr", "name": "Potassium Bromide", "cation": "K", "anion": "Br", "price": 20},
+        {"formula": "MgSO4", "name": "Magnesium Sulfate", "cation": "Mg", "anion": "SO4", "price": 30},
+        {"formula": "CuSO4", "name": "Copper(II) Sulfate", "cation": "Cu", "anion": "SO4", "price": 35},
+        {"formula": "ZnO", "name": "Zinc Oxide", "cation": "Zn", "anion": "O", "price": 40},
+        {"formula": "AgCl", "name": "Silver Chloride", "cation": "Ag", "anion": "Cl", "price": 80},
+        {"formula": "PbS", "name": "Lead(II) Sulfide", "cation": "Pb", "anion": "S", "price": 50},
+        {"formula": "LiF", "name": "Lithium Fluoride", "cation": "Li", "anion": "F", "price": 25},
+        {"formula": "RbCl", "name": "Rubidium Chloride", "cation": "Rb", "anion": "Cl", "price": 30},
+        {"formula": "CsI", "name": "Cesium Iodide", "cation": "Cs", "anion": "I", "price": 35},
+        {"formula": "BaSO4", "name": "Barium Sulfate", "cation": "Ba", "anion": "SO4", "price": 45},
+        {"formula": "SrCO3", "name": "Strontium Carbonate", "cation": "Sr", "anion": "CO3", "price": 40},
+        {"formula": "HgO", "name": "Mercury(II) Oxide", "cation": "Hg", "anion": "O", "price": 55},
+        {"formula": "CdS", "name": "Cadmium Sulfide", "cation": "Cd", "anion": "S", "price": 60},
+        {"formula": "Na2CO3", "name": "Sodium Carbonate", "cation": "Na", "anion": "CO3", "price": 20},
+        {"formula": "KNO3", "name": "Potassium Nitrate", "cation": "K", "anion": "NO3", "price": 25},
+        {"formula": "Li2SO4", "name": "Lithium Sulfate", "cation": "Li", "anion": "SO4", "price": 30},
+        {"formula": "NH4Cl", "name": "Ammonium Chloride", "cation": "NH4", "anion": "Cl", "price": 22},
+        {"formula": "NH4NO3", "name": "Ammonium Nitrate", "cation": "NH4", "anion": "NO3", "price": 28},
+        {"formula": "K2SO4", "name": "Potassium Sulfate", "cation": "K", "anion": "SO4", "price": 32},
+        {"formula": "NaBr", "name": "Sodium Bromide", "cation": "Na", "anion": "Br", "price": 18},
+        {"formula": "CaO", "name": "Calcium Oxide", "cation": "Ca", "anion": "O", "price": 40},
+        {"formula": "MgO", "name": "Magnesium Oxide", "cation": "Mg", "anion": "O", "price": 35},
+        {"formula": "KCl", "name": "Potassium Chloride", "cation": "K", "anion": "Cl", "price": 15},
+        {"formula": "NaNO3", "name": "Sodium Nitrate", "cation": "Na", "anion": "NO3", "price": 20},
+        {"formula": "NH4Br", "name": "Ammonium Bromide", "cation": "NH4", "anion": "Br", "price": 24},
+        {"formula": "AgNO3", "name": "Silver Nitrate", "cation": "Ag", "anion": "NO3", "price": 85},
+        {"formula": "CuCl", "name": "Copper(I) Chloride", "cation": "Cu", "anion": "Cl", "price": 30},
+        {"formula": "PbO", "name": "Lead(II) Oxide", "cation": "Pb", "anion": "O", "price": 45},
+        {"formula": "LiCl", "name": "Lithium Chloride", "cation": "Li", "anion": "Cl", "price": 20}
+      ];
+      compounds.sort(function(a, b) { return a.price - b.price; });
+      var compoundIndex = 0;
+      var currentCompound = compounds[compoundIndex];
+
+      // Success texts
+      var successTexts = {
+         "NaCl": "Sodium chloride is used for preservation, deicing, and water treatment.",
+         "KBr": "Potassium bromide is used in pharmaceuticals and photography.",
+         "MgSO4": "Magnesium sulfate is used in agriculture, bath salts, and construction.",
+         "CuSO4": "Copper sulfate is used in water treatment and electroplating.",
+         "ZnO": "Zinc oxide is used in sunscreens, ceramics, and paints.",
+         "AgCl": "Silver chloride is used in photography and antimicrobial coatings.",
+         "PbS": "Lead sulfide is used in infrared detectors and imaging.",
+         "LiF": "Lithium fluoride is used in ceramics and nuclear reactors.",
+         "RbCl": "Rubidium chloride is used in specialty glass and lasers.",
+         "CsI": "Cesium iodide is used in medical imaging and radiation monitoring.",
+         "BaSO4": "Barium sulfate is used as a contrast agent and filler.",
+         "SrCO3": "Strontium carbonate is used in ceramics and fireworks.",
+         "HgO": "Mercury(II) oxide is used in batteries and catalysis.",
+         "CdS": "Cadmium sulfide is used in solar cells and LEDs.",
+         "Na2CO3": "Sodium carbonate is used in glassmaking and detergents.",
+         "KNO3": "Potassium nitrate is used in fertilizers and explosives.",
+         "Li2SO4": "Lithium sulfate is used in batteries and ceramics.",
+         "NH4Cl": "Ammonium chloride is used in metal processing and food.",
+         "NH4NO3": "Ammonium nitrate is used in fertilizers and demolitions.",
+         "K2SO4": "Potassium sulfate is used in fertilizers and chemical manufacturing.",
+         "NaBr": "Sodium bromide is used in pharmaceuticals and synthesis.",
+         "CaO": "Calcium oxide is used in cement and water treatment.",
+         "MgO": "Magnesium oxide is used in refractories and pharmaceuticals.",
+         "KCl": "Potassium chloride is used in fertilizers and medicine.",
+         "NaNO3": "Sodium nitrate is used in food preservation and explosives.",
+         "NH4Br": "Ammonium bromide is used in dyes and chemical processes.",
+         "AgNO3": "Silver nitrate is used in photography and antiseptics.",
+         "CuCl": "Copper(I) chloride is used as a catalyst in pigments.",
+         "PbO": "Lead(II) oxide is used in batteries and ceramics.",
+         "LiCl": "Lithium chloride is used in dehumidifiers and as a desiccant."
+      };
+
+      // Unique and sorted ion lists
+      function unique(array) {
+          return array.filter(function(item, pos) { return array.indexOf(item) === pos; });
+      }
+      var cationList = unique(compounds.map(function(comp) { return comp.cation; }));
+      var anionList = unique(compounds.map(function(comp) { return comp.anion; }));
+      cationList.sort(function(a, b) {
+          var nameA = (cationFullNames[a] || a).toLowerCase();
+          var nameB = (cationFullNames[b] || b).toLowerCase();
+          return nameA.localeCompare(nameB);
+      });
+      anionList.sort(function(a, b) {
+          var nameA = (anionFullNames[a] || a).toLowerCase();
+          var nameB = (anionFullNames[b] || b).toLowerCase();
+          return nameA.localeCompare(nameB);
+      });
+
+      // Drag and drop state
+      var draggingItem = null; // {ion, source ("cation"/"anion"), offsetX, offsetY, x, y}
+      var selectedCation = null, selectedAnion = null;
+
+      // Electron transfer progress
+      var electronProgress = 0;
+      var ELECTRON_TRANSFER_TIME = 2000; // ms
+
+      // Shake feedback
+      var shaking = false;
+      var shakeDuration = 500, shakeTimer = 0;
+      var shakeOffset = {x: 0, y: 0};
+
+      // Currency counter (Dirhams) One game cycle all elements = 1049 Dirhams
+      var dirhams = 0;
+
+      // Button helper (for "Take Payment")
+      function createButton(x, y, width, height, text, callback) {
+         return {x: x, y: y, width: width, height: height, text: text, callback: callback, visible: true};
+      }
+      var takePaymentButton = null;
+
+      // Clamp function
+      function clamp(value, min, max) {
+         return Math.min(max, Math.max(min, value));
+      }
+
+      // Reset ion selections
+      function resetSelections() {
+          selectedCation = null;
+          selectedAnion = null;
+          electronProgress = 0;
+      }
+
+      // Update game logic
+      function update(dt) {
+          if(state === GAME_STATE) {
+              if(selectedCation && selectedAnion) {
+                  electronProgress += dt / ELECTRON_TRANSFER_TIME;
+                  if(electronProgress >= 1) {
+                      if(selectedCation === currentCompound.cation && selectedAnion === currentCompound.anion) {
+                          shaking = true;
+                          shakeTimer = shakeDuration;
+                          state = SUCCESS_STATE;
+                          updateSuccessOverlay();
+                      } else {
+                          resetSelections();
+                      }
+                  }
+              } else {
+                  electronProgress = 0;
+              }
+              if(shaking) {
+                  shakeTimer -= dt;
+                  shakeOffset.x = (Math.random() - 0.5) * 10;
+                  shakeOffset.y = (Math.random() - 0.5) * 10;
+                  if(shakeTimer <= 0) {
+                      shaking = false;
+                      shakeOffset.x = 0;
+                      shakeOffset.y = 0;
+                  }
+              }
+          }
+      }
+
+      function updateSuccessOverlay() {
+          var html = "";
+          html += "<h1 style='font-size:36px; color:green; margin-bottom:20px;'>Success! Compound Created!</h1>";
+          html += "<p style='font-size:28px; margin:10px 0;'>Name: " + currentCompound.name + "</p>";
+          html += "<p style='font-size:28px; margin:10px 0;'>Formula: " + currentCompound.formula + "</p>";
+          html += "<p style='font-size:24px; margin:10px 20px;'>" + (successTexts[currentCompound.formula] || "") + "</p>";
+          html += "<p style='font-size:24px; margin:10px 0; color:yellow;'>Reward: " + currentCompound.price + " Dirhams</p>";
+          html += "<button id='takePaymentButton' style='font-size:24px; padding:10px 20px; cursor:pointer;'>Take Payment</button>";
+          successOverlay.innerHTML = html;
+          successOverlay.style.display = "block";
+          document.getElementById("takePaymentButton").addEventListener("click", function() {
+              dirhams += currentCompound.price;
+              compoundIndex = (compoundIndex + 1) % compounds.length;
+              currentCompound = compounds[compoundIndex];
+              resetSelections();
+              state = GAME_STATE;
+              successOverlay.style.display = "none";
+          });
+      }
+
+      // Draw tooltip in the top left corner with a reduced width
+      function drawTooltip(text, maxWidth, lineHeight) {
+          var words = text.split(' ');
+          var lines = [];
+          var currentLine = "";
+          for(var n = 0; n < words.length; n++){
+              var testLine = currentLine + words[n] + " ";
+              if(ctx.measureText(testLine).width > maxWidth && n > 0) {
+                  lines.push(currentLine);
+                  currentLine = words[n] + " ";
+              } else {
+                  currentLine = testLine;
+              }
+          }
+          lines.push(currentLine);
+          var tooltipHeight = lines.length * lineHeight + 10;
+          var tooltipWidth = maxWidth + 20;
+          var x = 10; // 10px margin from left edge
+          var y = 10; // 10px margin from top edge
+          ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+          ctx.fillRect(x, y, tooltipWidth, tooltipHeight);
+          ctx.fillStyle = "yellow";
+          ctx.font = "16px Arial";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          for(var i = 0; i < lines.length; i++){
+              ctx.fillText(lines[i], x + 10, y + 5 + i * lineHeight);
+          }
+      }
+
+      // Draw ion panel with header and custom scrollbar.
+      // The scrollbar track spans from just below the header to the bottom of the panel.
+      function drawIonPanel(x, y, width, height, ionList, scrollOffset, type) {
+          var headerHeight = 30;
+          // Draw header
+          ctx.fillStyle = "#333";
+          ctx.fillRect(x, y, width, headerHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(x, y, width, headerHeight);
+          ctx.font = "bold 18px Arial";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          if(type === "cation") {
+              ctx.strokeStyle = darkGreen;
+              ctx.beginPath();
+              ctx.arc(x + 20, y + headerHeight/2, 10, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.fillStyle = darkGreen;
+              ctx.font = "bold 16px Arial";
+              ctx.textAlign = "center";
+              ctx.fillText("+", x + 20, y + headerHeight/2);
+              ctx.textAlign = "left";
+              ctx.fillStyle = "#fff";
+              ctx.fillText(" Cations", x + 35, y + headerHeight/2);
+          } else {
+              ctx.strokeStyle = darkRed;
+              ctx.beginPath();
+              ctx.arc(x + 20, y + headerHeight/2, 10, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.fillStyle = darkRed;
+              ctx.font = "bold 16px Arial";
+              ctx.textAlign = "center";
+              ctx.fillText("–", x + 20, y + headerHeight/2);
+              ctx.textAlign = "left";
+              ctx.fillStyle = "#fff";
+              ctx.fillText(" Anions", x + 35, y + headerHeight/2);
+          }
+          // Draw panel background
+          ctx.fillStyle = "#444";
+          ctx.fillRect(x, y + headerHeight, width, height - headerHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(x, y + headerHeight, width, height - headerHeight);
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y + headerHeight, width, height - headerHeight);
+          ctx.clip();
+          for(var i = 0; i < ionList.length; i++) {
+              var itemY = y + headerHeight + i * ITEM_HEIGHT + scrollOffset;
+              if(itemY + ITEM_HEIGHT < y + headerHeight || itemY > y + height) continue;
+              ctx.fillStyle = "#464646";
+              ctx.fillRect(x + 5, itemY, width - 10, ITEM_HEIGHT - 5);
+              ctx.strokeStyle = "#fff";
+              ctx.strokeRect(x + 5, itemY, width - 10, ITEM_HEIGHT - 5);
+              var iconX = x + 20;
+              var iconY = itemY + (ITEM_HEIGHT - 5) / 2;
+              if(type === "cation") {
+                  ctx.strokeStyle = darkGreen;
+                  ctx.beginPath();
+                  ctx.arc(iconX, iconY, 12, 0, Math.PI * 2);
+                  ctx.stroke();
+                  ctx.fillStyle = darkGreen;
+                  ctx.font = "bold 16px Arial";
+                  ctx.textAlign = "center";
+                  ctx.fillText("+", iconX, iconY);
+                  var text = cationFullNames[ionList[i]] || ionList[i];
+              } else {
+                  ctx.strokeStyle = darkRed;
+                  ctx.beginPath();
+                  ctx.arc(iconX, iconY, 12, 0, Math.PI * 2);
+                  ctx.stroke();
+                  ctx.fillStyle = darkRed;
+                  ctx.font = "bold 16px Arial";
+                  ctx.textAlign = "center";
+                  ctx.fillText("–", iconX, iconY);
+                  var text = anionFullNames[ionList[i]] || ionList[i];
+              }
+              ctx.fillStyle = "#fff";
+              ctx.font = "bold 20px Arial";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "middle";
+              ctx.fillText(text, iconX + 30, iconY);
+              ionPanelItems.push({
+                  type: type,
+                  ion: ionList[i],
+                  x: x + 5,
+                  y: itemY,
+                  width: width - 10,
+                  height: ITEM_HEIGHT - 5
+              });
+          }
+          ctx.restore();
+          // Draw custom scrollbar if needed
+          var contentHeight = height - headerHeight;
+          var totalHeight = ionList.length * ITEM_HEIGHT;
+          if(totalHeight > contentHeight) {
+              var scrollbarWidth = 8;
+              var trackY = y + headerHeight;
+              var trackHeight = contentHeight;
+              if(type === "cation") {
+                  leftScrollOffset = clamp(leftScrollOffset, contentHeight - totalHeight, 0);
+              } else {
+                  rightScrollOffset = clamp(rightScrollOffset, contentHeight - totalHeight, 0);
+              }
+              var scrollRatio = -((type === "cation") ? leftScrollOffset : rightScrollOffset) / (totalHeight - contentHeight);
+              var thumbHeight = trackHeight * trackHeight / totalHeight;
+              var thumbY = trackY + scrollRatio * (trackHeight - thumbHeight);
+              if(type === "cation") {
+                  leftScrollbarThumbY = thumbY;
+                  leftScrollbarThumbHeight = thumbHeight;
+                  leftScrollbarRect = { x: x + width - scrollbarWidth - 2, y: trackY, width: scrollbarWidth, height: trackHeight };
+              } else {
+                  rightScrollbarThumbY = thumbY;
+                  rightScrollbarThumbHeight = thumbHeight;
+                  rightScrollbarRect = { x: x + width - scrollbarWidth - 2, y: trackY, width: scrollbarWidth, height: trackHeight };
+              }
+              ctx.fillStyle = "#888";
+              ctx.fillRect(x + width - scrollbarWidth - 2, trackY, scrollbarWidth, trackHeight);
+              ctx.fillStyle = "#fff";
+              ctx.fillRect(x + width - scrollbarWidth - 2, thumbY, scrollbarWidth, thumbHeight);
+          }
+      }
+
+      // Helper: point-in-rectangle test
+      function pointInRect(px, py, rect) {
+          return px >= rect.x && px <= rect.x + rect.width &&
+                 py >= rect.y && py <= rect.y + rect.height;
+      }
+
+      // Mouse event handling
+      canvas.addEventListener("mousedown", function(e) {
+          var rect = canvas.getBoundingClientRect();
+          var mx = e.clientX - rect.left;
+          var my = e.clientY - rect.top;
+          
+          // Check left scrollbar thumb
+          if(leftScrollbarRect && pointInRect(mx, my, {x: leftScrollbarRect.x, y: leftScrollbarThumbY, width: 8, height: leftScrollbarThumbHeight})) {
+              leftScrollbarDragging = true;
+              leftScrollbarDragOffset = my - leftScrollbarThumbY;
+              return;
+          }
+          // Check right scrollbar thumb
+          if(rightScrollbarRect && pointInRect(mx, my, {x: rightScrollbarRect.x, y: rightScrollbarThumbY, width: 8, height: rightScrollbarThumbHeight})) {
+              rightScrollbarDragging = true;
+              rightScrollbarDragOffset = my - rightScrollbarThumbY;
+              return;
+          }
+          
+          // Otherwise, check ion panel items
+          for(var i = 0; i < ionPanelItems.length; i++) {
+              var item = ionPanelItems[i];
+              if(pointInRect(mx, my, item)) {
+                  draggingItem = {
+                      ion: item.ion,
+                      source: item.type,
+                      offsetX: mx - item.x,
+                      offsetY: my - item.y,
+                      x: mx,
+                      y: my
+                  };
+                  return;
+              }
+          }
+      });
+
+      canvas.addEventListener("mousemove", function(e) {
+          var rect = canvas.getBoundingClientRect();
+          var mx = e.clientX - rect.left;
+          var my = e.clientY - rect.top;
+
+          // Update left scrollbar dragging
+          if(leftScrollbarDragging && leftPanelConfig.height) {
+              var headerHeight = 30;
+              var trackY = leftPanelConfig.y + headerHeight;
+              var trackHeight = leftPanelConfig.height - headerHeight;
+              var totalHeight = cationList.length * ITEM_HEIGHT;
+              var contentHeight = leftPanelConfig.height - headerHeight;
+              var newThumbY = my - leftScrollbarDragOffset;
+              newThumbY = clamp(newThumbY, trackY, trackY + trackHeight - leftScrollbarThumbHeight);
+              var scrollRatio = (newThumbY - trackY) / (trackHeight - leftScrollbarThumbHeight);
+              leftScrollOffset = - scrollRatio * (totalHeight - contentHeight);
+          }
+          // Update right scrollbar dragging
+          if(rightScrollbarDragging && rightPanelConfig.height) {
+              var headerHeight = 30;
+              var trackY = rightPanelConfig.y + headerHeight;
+              var trackHeight = rightPanelConfig.height - headerHeight;
+              var totalHeight = anionList.length * ITEM_HEIGHT;
+              var contentHeight = rightPanelConfig.height - headerHeight;
+              var newThumbY = my - rightScrollbarDragOffset;
+              newThumbY = clamp(newThumbY, trackY, trackY + trackHeight - rightScrollbarThumbHeight);
+              var scrollRatio = (newThumbY - trackY) / (trackHeight - rightScrollbarThumbHeight);
+              rightScrollOffset = - scrollRatio * (totalHeight - contentHeight);
+          }
+          if(draggingItem) {
+              draggingItem.x = mx;
+              draggingItem.y = my;
+          }
+      });
+
+      canvas.addEventListener("mouseup", function(e) {
+          leftScrollbarDragging = false;
+          rightScrollbarDragging = false;
+          if(draggingItem) {
+              var rect = canvas.getBoundingClientRect();
+              var mx = e.clientX - rect.left;
+              var my = e.clientY - rect.top;
+              // New drop GUI area (center bottom) – reserve space for footer
+              var dropGuiWidth = 400;
+              var dropGuiHeight = 100; // Reduced height for more ion panel space
+              var footerHeight = 50;
+              var dropGuiX = (canvas.width - dropGuiWidth) / 2;
+              var dropGuiY = canvas.height - dropGuiHeight - footerHeight - 20;
+              var headerHeight = 30;
+              var leftZone = { x: dropGuiX, y: dropGuiY + headerHeight, width: dropGuiWidth / 2, height: dropGuiHeight - headerHeight };
+              var rightZone = { x: dropGuiX + dropGuiWidth / 2, y: dropGuiY + headerHeight, width: dropGuiWidth / 2, height: dropGuiHeight - headerHeight };
+              if(draggingItem.source === "cation" && pointInRect(mx, my, leftZone)) {
+                  selectedCation = draggingItem.ion;
+              }
+              if(draggingItem.source === "anion" && pointInRect(mx, my, rightZone)) {
+                  selectedAnion = draggingItem.ion;
+              }
+              draggingItem = null;
+          }
+      });
+
+      // Mouse wheel scrolling for ion panels
+      canvas.addEventListener("wheel", function(e) {
+          var rect = canvas.getBoundingClientRect();
+          var mx = e.clientX - rect.left;
+          var my = e.clientY - rect.top;
+          if(leftPanelConfig && my >= leftPanelConfig.y && my <= leftPanelConfig.y + leftPanelConfig.height &&
+             mx >= leftPanelConfig.x && mx <= leftPanelConfig.x + leftPanelConfig.width) {
+              var contentHeight = leftPanelConfig.height - 30;
+              leftScrollOffset = clamp(leftScrollOffset + e.deltaY, contentHeight - cationList.length * ITEM_HEIGHT, 0);
+          } else if(rightPanelConfig && my >= rightPanelConfig.y && my <= rightPanelConfig.y + rightPanelConfig.height &&
+                    mx >= rightPanelConfig.x && mx <= rightPanelConfig.x + rightPanelConfig.width) {
+              var contentHeight = rightPanelConfig.height - 30;
+              rightScrollOffset = clamp(rightScrollOffset + e.deltaY, contentHeight - anionList.length * ITEM_HEIGHT, 0);
+          }
+          e.preventDefault();
+      });
+
+      function loop() {
+          var now = performance.now();
+          var dt = now - lastTime;
+          lastTime = now;
+          ionPanelItems = [];
+          update(dt);
+          if(state !== SUCCESS_STATE) {
+              successOverlay.style.display = "none";
+          }
+          draw();
+          requestAnimationFrame(loop);
+      }
+      loop();
+
+      function draw() {
+          // Background gradient for high contrast
+          var grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+          grad.addColorStop(0, "#111");
+          grad.addColorStop(1, "#000");
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Order Bar (centered) – moved down for layout
+          var orderBarWidth = 400, orderBarHeight = 50;
+          var orderY = 80;
+          var orderX = (canvas.width - orderBarWidth) / 2;
+          ctx.fillStyle = "#444";
+          ctx.fillRect(orderX, orderY, orderBarWidth, orderBarHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(orderX, orderY, orderBarWidth, orderBarHeight);
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 32px Arial";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Customer Order: " + currentCompound.formula, canvas.width/2, orderY + orderBarHeight/2);
+
+          // Dirhams display (upper right)
+          ctx.font = "bold 28px Arial";
+          ctx.fillStyle = "yellow";
+          ctx.textAlign = "right";
+          ctx.fillText("Dirhams: " + dirhams, canvas.width - 10, orderY/2);
+
+          // Draw tooltip in the top left corner with reduced width (300 instead of 450)
+          drawTooltip("Tip: Cations are positive ions (green, +) and Anions are negative ions (red, –). Drag them into the matching drop zones.", 300, 24);
+
+          // Compute layout for ion panels
+          var panelWidth = 350;
+          var footerHeight = 50;
+          var dropGuiHeight = 100; // Reduced drop GUI height for extra scrollable space
+          var ionPanelsY = orderY + orderBarHeight + 40;
+          var panelHeight = canvas.height - ionPanelsY - dropGuiHeight - footerHeight - 10;
+          var leftPanelX = 10, rightPanelX = canvas.width - panelWidth - 10;
+          leftPanelConfig = { x: leftPanelX, y: ionPanelsY, width: panelWidth, height: panelHeight };
+          rightPanelConfig = { x: rightPanelX, y: ionPanelsY, width: panelWidth, height: panelHeight };
+
+          // Draw ion panels
+          drawIonPanel(leftPanelX, ionPanelsY, panelWidth, panelHeight, cationList, leftScrollOffset, "cation");
+          drawIonPanel(rightPanelX, ionPanelsY, panelWidth, panelHeight, anionList, rightScrollOffset, "anion");
+
+          // Drop GUI – unified bar at bottom center (above footer)
+          var dropGuiWidth = 400;
+          var dropGuiX = (canvas.width - dropGuiWidth) / 2;
+          var dropGuiY = canvas.height - dropGuiHeight - footerHeight - 20;
+          var headerHeight = 30;
+          ctx.fillStyle = "#222";
+          ctx.fillRect(dropGuiX, dropGuiY, dropGuiWidth, dropGuiHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(dropGuiX, dropGuiY, dropGuiWidth, dropGuiHeight);
+          // Drop GUI header for ions
+          ctx.fillStyle = "#333";
+          ctx.fillRect(dropGuiX, dropGuiY, dropGuiWidth, headerHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(dropGuiX, dropGuiY, dropGuiWidth, headerHeight);
+          // Left header for cation
+          ctx.beginPath();
+          ctx.arc(dropGuiX + 20, dropGuiY + headerHeight/2, 10, 0, Math.PI*2);
+          ctx.strokeStyle = darkGreen;
+          ctx.stroke();
+          ctx.fillStyle = darkGreen;
+          ctx.font = "bold 16px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText("+", dropGuiX + 20, dropGuiY + headerHeight/2);
+          ctx.textAlign = "left";
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 18px Arial";
+          ctx.fillText(" Cation", dropGuiX + 35, dropGuiY + headerHeight/2);
+          // Right header for anion
+          ctx.beginPath();
+          ctx.arc(dropGuiX + dropGuiWidth - 20, dropGuiY + headerHeight/2, 10, 0, Math.PI*2);
+          ctx.strokeStyle = darkRed;
+          ctx.stroke();
+          ctx.fillStyle = darkRed;
+          ctx.font = "bold 16px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText("–", dropGuiX + dropGuiWidth - 20, dropGuiY + headerHeight/2);
+          ctx.textAlign = "right";
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 18px Arial";
+          ctx.fillText(" Anion", dropGuiX + dropGuiWidth - 35, dropGuiY + headerHeight/2);
+          // Drop zones
+          var leftZone = { x: dropGuiX, y: dropGuiY + headerHeight, width: dropGuiWidth / 2, height: dropGuiHeight - headerHeight };
+          var rightZone = { x: dropGuiX + dropGuiWidth / 2, y: dropGuiY + headerHeight, width: dropGuiWidth / 2, height: dropGuiHeight - headerHeight };
+          ctx.fillStyle = "#555";
+          ctx.fillRect(leftZone.x, leftZone.y, leftZone.width, leftZone.height);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(leftZone.x, leftZone.y, leftZone.width, leftZone.height);
+          ctx.fillStyle = "#555";
+          ctx.fillRect(rightZone.x, rightZone.y, rightZone.width, rightZone.height);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(rightZone.x, rightZone.y, rightZone.width, rightZone.height);
+          if(selectedCation) {
+              ctx.fillStyle = darkGreen;
+              ctx.font = "bold 24px Arial";
+              ctx.textAlign = "center";
+              ctx.fillText(cationFullNames[selectedCation] || selectedCation, leftZone.x + leftZone.width/2, leftZone.y + leftZone.height/2);
+          }
+          if(selectedAnion) {
+              ctx.fillStyle = darkRed;
+              ctx.font = "bold 24px Arial";
+              ctx.textAlign = "center";
+              ctx.fillText(anionFullNames[selectedAnion] || selectedAnion, rightZone.x + rightZone.width/2, rightZone.y + rightZone.height/2);
+          }
+
+          // Electron Transfer Bar (above drop GUI)
+          var barWidth = 500, barHeight = 50;
+          var barX = (canvas.width - barWidth) / 2, barY = dropGuiY - barHeight - 20;
+          ctx.fillStyle = "#444";
+          ctx.fillRect(barX, barY, barWidth, barHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(barX, barY, barWidth, barHeight);
+          if(selectedCation && selectedAnion) {
+              ctx.fillStyle = "#0f0";
+              ctx.fillRect(barX, barY, barWidth * electronProgress, barHeight);
+              ctx.fillStyle = "#fff";
+              ctx.font = "bold 24px Arial";
+              ctx.textAlign = "center";
+              ctx.fillText((cationFullNames[selectedCation] || selectedCation) + " gives electron/s to " + (anionFullNames[selectedAnion] || selectedAnion), barX + barWidth/2, barY + barHeight/2);
+          }
+
+          // Render any dragging ion
+          if(draggingItem) {
+              ctx.font = "bold 24px Arial";
+              ctx.fillStyle = draggingItem.source === "cation" ? darkGreen : darkRed;
+              var displayName = draggingItem.source === "cation" 
+                                  ? (cationFullNames[draggingItem.ion] || draggingItem.ion)
+                                  : (anionFullNames[draggingItem.ion] || draggingItem.ion);
+              ctx.fillText(displayName, draggingItem.x, draggingItem.y);
+          }
+      }
+    })();
+  </script>
+</body>
+</html>
