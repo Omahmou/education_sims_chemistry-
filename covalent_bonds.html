@@ -61,9 +61,50 @@
       margin-top: 20px;
       cursor: pointer;
     }
+    /* Name input overlay styles */
+    #nameOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.95);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 20;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+    }
+    #nameOverlay h1 {
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+    #nameOverlay input {
+      margin-bottom: 10px;
+      padding: 8px;
+      font-size: 16px;
+      width: 80%;
+      max-width: 300px;
+    }
+    #nameOverlay button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
+  <!-- Name input overlay -->
+  <div id="nameOverlay">
+    <h1>Enter Your Name</h1>
+    <input type="text" id="firstName" placeholder="First Name" maxlength="15">
+    <input type="text" id="lastName" placeholder="Last Name" maxlength="15">
+    <button id="startButton">Start</button>
+  </div>
+
   <div id="container">
     <div id="canvasContainer">
       <canvas id="canvas"></canvas>
@@ -81,6 +122,21 @@
     });
 
     (function(){
+      // Global variable to store user's name
+      var userName = "";
+
+      // Handle name input overlay submission
+      document.getElementById("startButton").addEventListener("click", function() {
+        var first = document.getElementById("firstName").value.trim();
+        var last = document.getElementById("lastName").value.trim();
+        if(first === "" && last === "") {
+          alert("Please enter your name.");
+          return;
+        }
+        userName = first + " " + last;
+        document.getElementById("nameOverlay").style.display = "none";
+      });
+
       // Canvas and context
       var canvas = document.getElementById("canvas");
       var ctx = canvas.getContext("2d");
@@ -457,9 +513,15 @@
           // Clear the canvas
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+          // Draw user's name in the top left corner (if provided)
+          if(userName) {
+            ctx.fillStyle = "#fff";
+            ctx.font = "24px Arial";
+            ctx.textAlign = "left";
+            ctx.fillText(userName, 20, 30);
+          }
+
           // Draw header info (target compound and Dirhams)
-          ctx.fillStyle = "#fff";
-          ctx.font = "24px Arial";
           ctx.textAlign = "center";
           ctx.fillText("Target Compound: " + currentCompound.formula, canvas.width/2, 30);
           ctx.textAlign = "right";
@@ -566,7 +628,7 @@
           ctx.restore();
       }
 
-      // Main game loop 1246 full chem cycle
+      // Main game loop
       function gameLoop(now) {
           var dt = now - lastTime;
           lastTime = now;
