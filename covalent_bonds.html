@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Covalent Bonds</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* Reset & full-screen non-scrolling layout */
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: #000;
+    }
+    /* Main container holds canvas and branding footer */
+    #container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #canvasContainer {
+      width: 100%;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    /* Branding footer at bottom */
+    #footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: #222;
+      color: #aaa;
+      text-align: center;
+      padding: 10px;
+      font-size: 12px;
+      z-index: 5;
+    }
+    /* Success overlay (covers entire simulation when active) */
+    #successOverlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.95);
+      color: #fff;
+      display: none;
+      z-index: 10;
+      text-align: center;
+      padding-top: 100px;
+      font-family: Arial, sans-serif;
+    }
+    #successOverlay button {
+      font-size: 24px;
+      padding: 10px 20px;
+      margin-top: 20px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="canvasContainer">
+      <canvas id="canvas"></canvas>
+    </div>
+    <div id="footer">Dr. Omar Mahmoud Studios © 2025</div>
+    <div id="successOverlay"></div>
+  </div>
+  
+  <script>
+    // Prevent accidental leaving of the page
+    window.addEventListener("beforeunload", function (e) {
+      var confirmationMessage = "You will lose all your dirhams. Are you sure?";
+      (e || window.event).returnValue = confirmationMessage;
+      return confirmationMessage;
+    });
+
+    (function(){
+      // Canvas and context
+      var canvas = document.getElementById("canvas");
+      var ctx = canvas.getContext("2d");
+      var container = document.getElementById("container");
+      var successOverlay = document.getElementById("successOverlay");
+
+      // Colors for atoms
+      var colorAtom1 = "#0000FF"; // blue for Atom 1
+      var colorAtom2 = "#FFA500"; // orange for Atom 2
+
+      // Resize canvas to fill container
+      function resizeCanvas() {
+         canvas.width = container.clientWidth;
+         canvas.height = container.clientHeight;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+
+      // Game state constants
+      var GAME_STATE = "GAME", SUCCESS_STATE = "SUCCESS";
+      var state = GAME_STATE;
+      var lastTime = performance.now();
+
+      // Height of each panel item
+      var ITEM_HEIGHT = 60;
+
+      // Define full names for atoms
+      var atomFullNames = {
+          "H": "Hydrogen", "C": "Carbon", "N": "Nitrogen", "O": "Oxygen",
+          "F": "Fluorine", "Cl": "Chlorine", "Br": "Bromine", "I": "Iodine"
+      };
+
+      // 30 covalent compounds – each with a unique success screen and reward
+      var compounds = [
+        {"formula": "H₂", "name": "Hydrogen Gas", "atom1": "H", "atom2": "H", "price": 10},
+        {"formula": "O₂", "name": "Oxygen Gas", "atom1": "O", "atom2": "O", "price": 20},
+        {"formula": "N₂", "name": "Nitrogen Gas", "atom1": "N", "atom2": "N", "price": 30},
+        {"formula": "F₂", "name": "Fluorine Gas", "atom1": "F", "atom2": "F", "price": 25},
+        {"formula": "Cl₂", "name": "Chlorine Gas", "atom1": "Cl", "atom2": "Cl", "price": 35},
+        {"formula": "Br₂", "name": "Bromine", "atom1": "Br", "atom2": "Br", "price": 40},
+        {"formula": "I₂", "name": "Iodine", "atom1": "I", "atom2": "I", "price": 45},
+        {"formula": "CO", "name": "Carbon Monoxide", "atom1": "C", "atom2": "O", "price": 50},
+        {"formula": "NO", "name": "Nitric Oxide", "atom1": "N", "atom2": "O", "price": 55},
+        {"formula": "CN", "name": "Cyanogen", "atom1": "C", "atom2": "N", "price": 60},
+        {"formula": "HCl", "name": "Hydrogen Chloride", "atom1": "H", "atom2": "Cl", "price": 22},
+        {"formula": "HF", "name": "Hydrogen Fluoride", "atom1": "H", "atom2": "F", "price": 24},
+        {"formula": "HBr", "name": "Hydrogen Bromide", "atom1": "H", "atom2": "Br", "price": 26},
+        {"formula": "HI", "name": "Hydrogen Iodide", "atom1": "H", "atom2": "I", "price": 28},
+        {"formula": "CH", "name": "Methylidyne", "atom1": "C", "atom2": "H", "price": 32},
+        {"formula": "NH", "name": "Imidogen", "atom1": "N", "atom2": "H", "price": 34},
+        {"formula": "OH", "name": "Hydroxyl Radical", "atom1": "O", "atom2": "H", "price": 36},
+        {"formula": "ClF", "name": "Chlorine Monofluoride", "atom1": "Cl", "atom2": "F", "price": 38},
+        {"formula": "BrF", "name": "Bromine Monofluoride", "atom1": "Br", "atom2": "F", "price": 42},
+        {"formula": "IF", "name": "Iodine Monofluoride", "atom1": "I", "atom2": "F", "price": 44},
+        {"formula": "OF", "name": "Oxygen Monofluoride", "atom1": "O", "atom2": "F", "price": 46},
+        {"formula": "NF", "name": "Nitrogen Monofluoride", "atom1": "N", "atom2": "F", "price": 48},
+        {"formula": "BrO", "name": "Bromine Monoxide", "atom1": "Br", "atom2": "O", "price": 50},
+        {"formula": "IO", "name": "Iodine Monoxide", "atom1": "I", "atom2": "O", "price": 52},
+        {"formula": "ClO", "name": "Chlorine Monoxide", "atom1": "Cl", "atom2": "O", "price": 54},
+        {"formula": "CF", "name": "Carbon Monofluoride", "atom1": "C", "atom2": "F", "price": 56},
+        {"formula": "CCl", "name": "Carbon Monochloride", "atom1": "C", "atom2": "Cl", "price": 58},
+        {"formula": "CBr", "name": "Carbon Monobromide", "atom1": "C", "atom2": "Br", "price": 60},
+        {"formula": "CI", "name": "Carbon Monoiodide", "atom1": "C", "atom2": "I", "price": 62},
+        {"formula": "NI", "name": "Nitrogen Monoiodide", "atom1": "N", "atom2": "I", "price": 64}
+      ];
+      // Sort compounds by price for progression
+      compounds.sort(function(a, b) { return a.price - b.price; });
+      var compoundIndex = 0;
+      var currentCompound = compounds[compoundIndex];
+
+      // Unique success texts for each compound (real‑world applications)
+      var successTexts = {
+         "H₂": "Hydrogen is used as a clean fuel in fuel cells and in the Haber process for ammonia synthesis.",
+         "O₂": "Oxygen is vital for respiration and is used in medical therapies and industrial combustion.",
+         "N₂": "Nitrogen is used in food preservation and in the production of fertilizers.",
+         "F₂": "Fluorine is key in producing Teflon and for etching glass in industrial processes.",
+         "Cl₂": "Chlorine is used to purify water and manufacture plastics like PVC.",
+         "Br₂": "Bromine is employed in flame retardants and pharmaceutical synthesis.",
+         "I₂": "Iodine is used as an antiseptic and in nutritional supplements for thyroid health.",
+         "CO": "Carbon monoxide is used in metallurgy and as a reducing agent in chemical processes.",
+         "NO": "Nitric oxide is used in rocket propulsion and as a signaling molecule in medical treatments.",
+         "CN": "Cyanogen is used in organic synthesis and sometimes in fumigation processes.",
+         "HCl": "Hydrogen chloride is vital for producing hydrochloric acid used in cleaning and manufacturing.",
+         "HF": "Hydrogen fluoride is used in etching glass and in semiconductor production.",
+         "HBr": "Hydrogen bromide is used to synthesize bromine-containing compounds in pharmaceuticals.",
+         "HI": "Hydrogen iodide is employed in organic synthesis and in producing iodine.",
+         "CH": "Methylidyne plays a role in combustion and is studied in interstellar chemistry.",
+         "NH": "Imidogen is significant in atmospheric chemistry and combustion reactions.",
+         "OH": "The hydroxyl radical helps break down pollutants and plays a key role in atmospheric cleansing.",
+         "ClF": "Chlorine monofluoride is used in specialized fluorination reactions in chemical manufacturing.",
+         "BrF": "Bromine monofluoride finds applications in high-energy materials and synthesis processes.",
+         "IF": "Iodine monofluoride is researched for its unique reactivity in advanced chemical studies.",
+         "OF": "Oxygen monofluoride is an intermediate in combustion and specialty chemical synthesis.",
+         "NF": "Nitrogen monofluoride is used in studying reaction mechanisms in atmospheric chemistry.",
+         "BrO": "Bromine monoxide is crucial for understanding ozone depletion and environmental research.",
+         "IO": "Iodine monoxide is studied for its role in atmospheric processes and pollution control.",
+         "ClO": "Chlorine monoxide is important in polar ozone research and climate studies.",
+         "CF": "Carbon monofluoride is used in advanced material synthesis and bonding research.",
+         "CCl": "Carbon monochloride is employed in chemical vapor deposition and organic synthesis.",
+         "CBr": "Carbon monobromide is researched for novel halogenated compounds in material science.",
+         "CI": "Carbon monoiodide is studied for its weak bonding, with applications in advanced material research.",
+         "NI": "Nitrogen monoiodide is used in investigating reactive nitrogen species in combustion studies."
+      };
+
+      // Create unique sorted lists for atom1 and atom2 panels
+      function unique(array) {
+          return array.filter(function(item, pos) { return array.indexOf(item) === pos; });
+      }
+      var atom1List = unique(compounds.map(function(comp) { return comp.atom1; }));
+      var atom2List = unique(compounds.map(function(comp) { return comp.atom2; }));
+      atom1List.sort(function(a, b) {
+          var nameA = (atomFullNames[a] || a).toLowerCase();
+          var nameB = (atomFullNames[b] || b).toLowerCase();
+          return nameA.localeCompare(nameB);
+      });
+      atom2List.sort(function(a, b) {
+          var nameA = (atomFullNames[a] || a).toLowerCase();
+          var nameB = (atomFullNames[b] || b).toLowerCase();
+          return nameA.localeCompare(nameB);
+      });
+
+      // Selection state for atoms (set via dragging)
+      var selectedAtom1 = null, selectedAtom2 = null;
+      
+      // Electron sharing progress (loading bar)
+      var electronProgress = 0;
+      var ELECTRON_SHARE_TIME = 2000; // milliseconds
+
+      // Shaking effect on wrong compound only
+      var shaking = false;
+      var shakeDuration = 500, shakeTimer = 0;
+      var shakeOffset = {x: 0, y: 0};
+
+      // Currency counter (Dirhams)
+      var dirhams = 0;
+
+      // Dragging state for panel items
+      var draggingItem = null; // {source: "atom1"/"atom2", atom, startX, startY, currentX, currentY, index}
+
+      // Reset selections and electron progress
+      function resetSelections() {
+          selectedAtom1 = null;
+          selectedAtom2 = null;
+          electronProgress = 0;
+      }
+
+      // Update game logic
+      function update(dt) {
+          if(state === GAME_STATE) {
+              if(selectedAtom1 && selectedAtom2) {
+                  electronProgress += dt / ELECTRON_SHARE_TIME;
+                  if(electronProgress >= 1) {
+                      // Check if the selected atoms form the correct compound
+                      if(selectedAtom1 === currentCompound.atom1 && selectedAtom2 === currentCompound.atom2) {
+                          state = SUCCESS_STATE;
+                          updateSuccessOverlay();
+                      } else {
+                          // Wrong compound: initiate shaking effect if not already shaking
+                          if(!shaking) {
+                              shaking = true;
+                              shakeTimer = shakeDuration;
+                          }
+                      }
+                  }
+              } else {
+                  electronProgress = 0;
+              }
+          }
+          // Handle shaking: only applies on wrong compound attempt
+          if(shaking) {
+              shakeTimer -= dt;
+              shakeOffset.x = (Math.random() - 0.5) * 10;
+              shakeOffset.y = (Math.random() - 0.5) * 10;
+              if(shakeTimer <= 0) {
+                  shaking = false;
+                  shakeOffset.x = 0;
+                  shakeOffset.y = 0;
+                  resetSelections();
+              }
+          }
+      }
+
+      // Show unique success overlay for the compound (no shake effect here)
+      function updateSuccessOverlay() {
+          var html = "";
+          html += "<h1 style='font-size:36px; color:green; margin-bottom:20px;'>Success! Compound Created!</h1>";
+          html += "<p style='font-size:28px; margin:10px 0;'>Name: " + currentCompound.name + "</p>";
+          html += "<p style='font-size:28px; margin:10px 0;'>Formula: " + currentCompound.formula + "</p>";
+          html += "<p style='font-size:24px; margin:10px 20px;'>" + (successTexts[currentCompound.formula] || "") + "</p>";
+          html += "<p style='font-size:24px; margin:10px 0; color:yellow;'>Reward: " + currentCompound.price + " Dirhams</p>";
+          html += "<button id='takePaymentButton' style='font-size:24px; padding:10px 20px; cursor:pointer;'>Take Payment</button>";
+          successOverlay.innerHTML = html;
+          successOverlay.style.display = "block";
+          document.getElementById("takePaymentButton").addEventListener("click", function() {
+              dirhams += currentCompound.price;
+              compoundIndex = (compoundIndex + 1) % compounds.length;
+              currentCompound = compounds[compoundIndex];
+              resetSelections();
+              state = GAME_STATE;
+              successOverlay.style.display = "none";
+          });
+      }
+
+      // Helper: Clamp a value between min and max
+      function clamp(value, min, max) {
+         return Math.min(max, Math.max(min, value));
+      }
+
+      // Draw a panel (for Atom 1 or Atom 2) with header and list items
+      function drawIonPanel(x, y, width, height, atomList, scrollOffset, type) {
+          var headerHeight = 30;
+          // Draw header background
+          ctx.fillStyle = "#333";
+          ctx.fillRect(x, y, width, headerHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(x, y, width, headerHeight);
+          ctx.font = "bold 18px Arial";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          if(type === "atom1") {
+              // Draw icon for Atom 1
+              ctx.strokeStyle = colorAtom1;
+              ctx.beginPath();
+              ctx.arc(x + 20, y + headerHeight/2, 10, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.fillStyle = colorAtom1;
+              ctx.font = "bold 16px Arial";
+              ctx.textAlign = "center";
+              ctx.fillText("1", x + 20, y + headerHeight/2);
+              ctx.textAlign = "left";
+              ctx.fillStyle = "#fff";
+              ctx.fillText(" Atom 1", x + 35, y + headerHeight/2);
+          } else {
+              // Draw icon for Atom 2
+              ctx.strokeStyle = colorAtom2;
+              ctx.beginPath();
+              ctx.arc(x + 20, y + headerHeight/2, 10, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.fillStyle = colorAtom2;
+              ctx.font = "bold 16px Arial";
+              ctx.textAlign = "center";
+              ctx.fillText("2", x + 20, y + headerHeight/2);
+              ctx.textAlign = "left";
+              ctx.fillStyle = "#fff";
+              ctx.fillText(" Atom 2", x + 35, y + headerHeight/2);
+          }
+          // Draw panel background
+          ctx.fillStyle = "#444";
+          ctx.fillRect(x, y + headerHeight, width, height - headerHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(x, y + headerHeight, width, height - headerHeight);
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y + headerHeight, width, height - headerHeight);
+          ctx.clip();
+          for(var i = 0; i < atomList.length; i++) {
+              var itemY = y + headerHeight + i * ITEM_HEIGHT + scrollOffset;
+              if(itemY + ITEM_HEIGHT < y + headerHeight || itemY > y + height) continue;
+              ctx.fillStyle = "#464646";
+              ctx.fillRect(x + 5, itemY, width - 10, ITEM_HEIGHT - 5);
+              ctx.strokeStyle = "#fff";
+              ctx.strokeRect(x + 5, itemY, width - 10, ITEM_HEIGHT - 5);
+              var iconX = x + 20;
+              var iconY = itemY + (ITEM_HEIGHT - 5) / 2;
+              ctx.beginPath();
+              ctx.arc(iconX, iconY, 12, 0, Math.PI * 2);
+              ctx.strokeStyle = (type === "atom1") ? colorAtom1 : colorAtom2;
+              ctx.stroke();
+              // Draw the atom symbol inside the circle
+              ctx.fillStyle = "#fff";
+              ctx.font = "bold 14px Arial";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(atomList[i], iconX, iconY);
+              // Draw full name next to the icon
+              ctx.textAlign = "left";
+              ctx.font = "16px Arial";
+              ctx.fillText(atomFullNames[atomList[i]] || atomList[i], x + 40, iconY);
+          }
+          ctx.restore();
+      }
+
+      // Helper: Compute panel bounds (used for click detection / dragging)
+      function getPanels() {
+          return {
+            left: {x: 10, y: 50, width: 150, height: canvas.height - 100},
+            right: {x: canvas.width - 160, y: 50, width: 150, height: canvas.height - 100}
+          };
+      }
+
+      // ----------- DRAG & DROP EVENT HANDLERS -------------
+      var headerHeight = 30;
+      canvas.addEventListener("mousedown", function(e) {
+          var rect = canvas.getBoundingClientRect();
+          var mouseX = e.clientX - rect.left;
+          var mouseY = e.clientY - rect.top;
+          var panels = getPanels();
+          // Check left panel for Atom 1
+          if(mouseX >= panels.left.x && mouseX <= panels.left.x + panels.left.width &&
+             mouseY >= panels.left.y + headerHeight && mouseY <= panels.left.y + panels.left.height) {
+              var index = Math.floor((mouseY - (panels.left.y + headerHeight)) / ITEM_HEIGHT);
+              if(index >= 0 && index < atom1List.length) {
+                  draggingItem = {
+                      source: "atom1",
+                      atom: atom1List[index],
+                      startX: mouseX,
+                      startY: mouseY,
+                      currentX: mouseX,
+                      currentY: mouseY,
+                      index: index
+                  };
+              }
+              return;
+          }
+          // Check right panel for Atom 2
+          if(mouseX >= panels.right.x && mouseX <= panels.right.x + panels.right.width &&
+             mouseY >= panels.right.y + headerHeight && mouseY <= panels.right.y + panels.right.height) {
+              var index = Math.floor((mouseY - (panels.right.y + headerHeight)) / ITEM_HEIGHT);
+              if(index >= 0 && index < atom2List.length) {
+                  draggingItem = {
+                      source: "atom2",
+                      atom: atom2List[index],
+                      startX: mouseX,
+                      startY: mouseY,
+                      currentX: mouseX,
+                      currentY: mouseY,
+                      index: index
+                  };
+              }
+              return;
+          }
+      });
+
+      canvas.addEventListener("mousemove", function(e) {
+          if(!draggingItem) return;
+          var rect = canvas.getBoundingClientRect();
+          draggingItem.currentX = e.clientX - rect.left;
+          draggingItem.currentY = e.clientY - rect.top;
+      });
+
+      canvas.addEventListener("mouseup", function(e) {
+          if(!draggingItem) return;
+          var rect = canvas.getBoundingClientRect();
+          var mouseX = e.clientX - rect.left;
+          var mouseY = e.clientY - rect.top;
+          var centerX = canvas.width / 2;
+          var centerY = canvas.height / 2;
+          // Define drop zones: left zone for Atom 1 and right zone for Atom 2 (radius ~40px)
+          if(draggingItem.source === "atom1") {
+              var dx = mouseX - (centerX - 100);
+              var dy = mouseY - centerY;
+              if(Math.sqrt(dx*dx + dy*dy) < 40) {
+                  selectedAtom1 = draggingItem.atom;
+                  electronProgress = 0;
+              }
+          } else if(draggingItem.source === "atom2") {
+              var dx = mouseX - (centerX + 100);
+              var dy = mouseY - centerY;
+              if(Math.sqrt(dx*dx + dy*dy) < 40) {
+                  selectedAtom2 = draggingItem.atom;
+                  electronProgress = 0;
+              }
+          }
+          draggingItem = null;
+      });
+      // ----------- END DRAG & DROP HANDLERS -------------
+
+      // Draw the entire simulation scene
+      function draw() {
+          ctx.save();
+          // Apply shake offset if shaking (wrong compound)
+          ctx.translate(shakeOffset.x, shakeOffset.y);
+          // Clear the canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Draw header info (target compound and Dirhams)
+          ctx.fillStyle = "#fff";
+          ctx.font = "24px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText("Target Compound: " + currentCompound.formula, canvas.width/2, 30);
+          ctx.textAlign = "right";
+          ctx.fillText("Dirhams: " + dirhams, canvas.width - 20, 30);
+
+          // Draw left and right panels
+          var panels = getPanels();
+          drawIonPanel(panels.left.x, panels.left.y, panels.left.width, panels.left.height, atom1List, 0, "atom1");
+          drawIonPanel(panels.right.x, panels.right.y, panels.right.width, panels.right.height, atom2List, 0, "atom2");
+
+          // Draw central bonding area
+          var centerX = canvas.width / 2;
+          var centerY = canvas.height / 2;
+          // Left bonding zone (Atom 1)
+          if(!selectedAtom1) {
+              ctx.strokeStyle = colorAtom1;
+              ctx.beginPath();
+              ctx.arc(centerX - 100, centerY, 30, 0, Math.PI * 2);
+              ctx.stroke();
+          } else {
+              ctx.fillStyle = colorAtom1;
+              ctx.beginPath();
+              ctx.arc(centerX - 100, centerY, 30, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = "#fff";
+              ctx.font = "20px Arial";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(selectedAtom1, centerX - 100, centerY);
+          }
+          // Right bonding zone (Atom 2)
+          if(!selectedAtom2) {
+              ctx.strokeStyle = colorAtom2;
+              ctx.beginPath();
+              ctx.arc(centerX + 100, centerY, 30, 0, Math.PI * 2);
+              ctx.stroke();
+          } else {
+              ctx.fillStyle = colorAtom2;
+              ctx.beginPath();
+              ctx.arc(centerX + 100, centerY, 30, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = "#fff";
+              ctx.font = "20px Arial";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(selectedAtom2, centerX + 100, centerY);
+          }
+          // Draw bond line if both atoms are selected
+          if(selectedAtom1 && selectedAtom2) {
+              ctx.strokeStyle = "#fff";
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.moveTo(centerX - 70, centerY);
+              ctx.lineTo(centerX + 70, centerY);
+              ctx.stroke();
+          }
+          // Draw electron-sharing progress bar with text if both atoms are selected
+          if(selectedAtom1 && selectedAtom2) {
+              var barWidth = 200, barHeight = 20;
+              var barX = centerX - barWidth/2, barY = centerY - 60;
+              ctx.fillStyle = "#555";
+              ctx.fillRect(barX, barY, barWidth, barHeight);
+              ctx.fillStyle = "#0f0";
+              ctx.fillRect(barX, barY, barWidth * clamp(electronProgress, 0, 1), barHeight);
+              ctx.strokeStyle = "#fff";
+              ctx.strokeRect(barX, barY, barWidth, barHeight);
+              ctx.fillStyle = "#fff";
+              ctx.font = "16px Arial";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("Sharing electrons", barX + barWidth/2, barY + barHeight/2);
+          }
+          // Draw the info box below the bonding area explaining covalent bonds
+          var infoBoxWidth = 400, infoBoxHeight = 60;
+          var infoBoxX = centerX - infoBoxWidth/2;
+          var infoBoxY = centerY + 80;
+          ctx.fillStyle = "rgba(50,50,50,0.8)";
+          ctx.fillRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight);
+          ctx.strokeStyle = "#fff";
+          ctx.strokeRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight);
+          ctx.fillStyle = "#fff";
+          ctx.font = "16px Arial";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Covalent bonds form when atoms share electrons.", centerX, infoBoxY + infoBoxHeight/2);
+          
+          // If an item is being dragged, draw it at its current position
+          if(draggingItem) {
+              ctx.save();
+              var drawX = draggingItem.currentX;
+              var drawY = draggingItem.currentY;
+              var radius = 20;
+              ctx.fillStyle = (draggingItem.source === "atom1") ? colorAtom1 : colorAtom2;
+              ctx.beginPath();
+              ctx.arc(drawX, drawY, radius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = "#fff";
+              ctx.font = "20px Arial";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(draggingItem.atom, drawX, drawY);
+              ctx.restore();
+          }
+          ctx.restore();
+      }
+
+      // Main game loop 1246 full chem cycle
+      function gameLoop(now) {
+          var dt = now - lastTime;
+          lastTime = now;
+          update(dt);
+          draw();
+          requestAnimationFrame(gameLoop);
+      }
+      requestAnimationFrame(gameLoop);
+    })();
+  </script>
+</body>
+</html>
